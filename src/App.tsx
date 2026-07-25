@@ -17,6 +17,7 @@ import { SmartPlaylistView } from './components/views/SmartPlaylistView';
 import { EqualizerModal } from './components/modals/EqualizerModal';
 import { ShareModal } from './components/modals/ShareModal';
 import { MobileInstallModal } from './components/modals/MobileInstallModal';
+import { ToastContainer } from './components/common/ToastContainer';
 
 const MainContent: React.FC = () => {
   const {
@@ -81,7 +82,8 @@ const MainContent: React.FC = () => {
         {/* Fullscreen Expanded Now Playing View */}
         <NowPlayingModal />
 
-        {/* Global Modals */}
+        {/* Global Modals & Toast Notifications */}
+        <ToastContainer />
         <EqualizerModal isOpen={isEqualizerOpen} onClose={closeEqualizer} />
         <ShareModal track={shareModalTrack} onClose={closeShareModal} />
         <MobileInstallModal isOpen={isMobileInstallModalOpen} onClose={closeMobileInstallModal} />

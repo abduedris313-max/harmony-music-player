@@ -37,7 +37,7 @@ export const MiniPlayer: React.FC = () => {
     showLyrics,
     setShowLyrics,
     audioAnalyser,
-    openShareModal
+    shareTrack
   } = useAudio();
 
   const [showVolumeSlider, setShowVolumeSlider] = useState(false);
@@ -206,9 +206,9 @@ export const MiniPlayer: React.FC = () => {
           {/* Share Button */}
           <button
             id="mini-player-share-btn"
-            onClick={() => openShareModal(currentTrack)}
+            onClick={() => shareTrack(currentTrack)}
             className="p-1.5 sm:p-2 text-zinc-400 hover:text-rose-500 transition-colors rounded-full"
-            title="Share Audio & Track Details"
+            title="Share Audio & Track Details via Web Share API"
           >
             <Share2 className="w-4 h-4" />
           </button>

@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Play, Pause, Heart, MoreHorizontal, Plus, Music, HardDrive, Sparkles } from 'lucide-react';
+import { Play, Pause, Heart, MoreHorizontal, Plus, Music, HardDrive, Sparkles, Share2 } from 'lucide-react';
 import { Track } from '../../types/music';
 import { useAudio } from '../../context/AudioContext';
 
@@ -24,7 +24,8 @@ export const TrackRow: React.FC<TrackRowProps> = ({
     favoriteTrackIds,
     toggleFavorite,
     customPlaylists,
-    addTrackToPlaylist
+    addTrackToPlaylist,
+    shareTrack
   } = useAudio();
 
   const [showMenu, setShowMenu] = useState(false);
@@ -125,7 +126,7 @@ export const TrackRow: React.FC<TrackRowProps> = ({
         </div>
       )}
 
-      {/* Right controls: Favorite, Duration, Menu */}
+      {/* Right controls: Favorite, Share, Duration, Menu */}
       <div className="flex items-center gap-2 flex-shrink-0">
         <button
           id={`fav-btn-${track.id}`}
@@ -141,6 +142,18 @@ export const TrackRow: React.FC<TrackRowProps> = ({
           title={isFavorite ? 'Remove from Favorites' : 'Add to Favorites'}
         >
           <Heart className={`w-4 h-4 ${isFavorite ? 'fill-current' : ''}`} />
+        </button>
+
+        <button
+          id={`share-btn-${track.id}`}
+          onClick={(e) => {
+            e.stopPropagation();
+            shareTrack(track);
+          }}
+          className="p-1.5 text-zinc-400 hover:text-rose-500 rounded-full opacity-0 group-hover:opacity-100 transition-all"
+          title="Share Track metadata & link via Web Share API"
+        >
+          <Share2 className="w-4 h-4" />
         </button>
 
         <span className="text-xs text-zinc-400 font-mono w-10 text-right">
@@ -165,6 +178,17 @@ export const TrackRow: React.FC<TrackRowProps> = ({
               className="absolute right-0 top-8 z-30 w-48 py-1 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl shadow-xl text-xs backdrop-blur-xl"
               onClick={(e) => e.stopPropagation()}
             >
+              <button
+                onClick={() => {
+                  shareTrack(track);
+                  setShowMenu(false);
+                }}
+                className="w-full flex items-center gap-2 px-3 py-2 text-zinc-700 dark:text-zinc-300 hover:bg-rose-500/10 hover:text-rose-500"
+              >
+                <Share2 className="w-3.5 h-3.5" />
+                Share Track (Web Share)
+              </button>
+
               <button
                 onClick={() => {
                   toggleFavorite(track.id);

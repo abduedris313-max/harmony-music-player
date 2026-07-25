@@ -43,6 +43,7 @@ export const NowPlayingModal: React.FC = () => {
     toggleRepeat,
     favoriteTrackIds,
     toggleFavorite,
+    shareTrack,
     isNowPlayingExpanded,
     setNowPlayingExpanded,
     showLyrics,
@@ -216,7 +217,7 @@ export const NowPlayingModal: React.FC = () => {
             <div className="absolute inset-0 bg-gradient-to-t from-black/40 via-transparent to-transparent opacity-60" />
           </div>
 
-          {/* Title & Artist & Favorite Heart */}
+          {/* Title & Artist & Favorite & Share Buttons */}
           <div className="mt-6 flex items-center justify-between w-full max-w-md px-2">
             <div className="min-w-0 flex-1 pr-4">
               <h1 className="text-xl sm:text-2xl font-bold text-white truncate">
@@ -226,16 +227,26 @@ export const NowPlayingModal: React.FC = () => {
                 {currentTrack.artist}
               </p>
             </div>
-            <button
-              onClick={() => toggleFavorite(currentTrack.id)}
-              className={`p-2.5 rounded-full backdrop-blur-md transition-colors ${
-                isFavorite
-                  ? 'bg-rose-500/20 text-rose-500 fill-rose-500'
-                  : 'bg-white/5 text-white/60 hover:text-white'
-              }`}
-            >
-              <Heart className={`w-6 h-6 ${isFavorite ? 'fill-current' : ''}`} />
-            </button>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => shareTrack(currentTrack)}
+                className="p-2.5 rounded-full bg-white/5 text-white/70 hover:text-white backdrop-blur-md transition-colors"
+                title="Share track metadata & URL"
+              >
+                <Share2 className="w-5 h-5" />
+              </button>
+              <button
+                onClick={() => toggleFavorite(currentTrack.id)}
+                className={`p-2.5 rounded-full backdrop-blur-md transition-colors ${
+                  isFavorite
+                    ? 'bg-rose-500/20 text-rose-500 fill-rose-500'
+                    : 'bg-white/5 text-white/60 hover:text-white'
+                }`}
+                title={isFavorite ? 'Remove from Favorites' : 'Add to Favorites'}
+              >
+                <Heart className={`w-5 h-5 ${isFavorite ? 'fill-current' : ''}`} />
+              </button>
+            </div>
           </div>
         </div>
 

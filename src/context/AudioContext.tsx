@@ -10,6 +10,13 @@ export interface CustomEqPreset {
   preamp: number;
 }
 
+export interface ToastNotification {
+  id: string;
+  message: string;
+  type: 'info' | 'success' | 'warning' | 'error';
+  duration?: number;
+}
+
 export interface BeforeInstallPromptEvent extends Event {
   readonly platforms: string[];
   readonly userChoice: Promise<{
@@ -20,6 +27,13 @@ export interface BeforeInstallPromptEvent extends Event {
 }
 
 interface AudioContextType {
+  // Network & Global Toast State
+  isOnline: boolean;
+  toasts: ToastNotification[];
+  showToast: (message: string, type?: 'info' | 'success' | 'warning' | 'error', duration?: number) => void;
+  removeToast: (id: string) => void;
+  shareTrack: (track: Track) => Promise<void>;
+
   // PWA & Notification State
   isInstallable: boolean;
   isAppInstalled: boolean;
@@ -256,13 +270,51 @@ export const AudioProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     }
   });
 
+  // Network Status & Toast State
+  const [isOnline, setIsOnline] = useState<boolean>(() => typeof navigator !== 'undefined' ? navigator.onLine : true);
+  const [toasts, setToasts] = useState<ToastNotification[]>([]);
+
+  const showToast = (message: string, type: 'info' | 'success' | 'warning' | 'error' = 'info', duration: number = 3500) => {
+    const id = `toast-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`;
+    setToasts(prev => [...prev, { id, message, type, duration }]);
+    setTimeout(() => {
+      setToasts(prev => prev.filter(t => t.id !== id));
+    }, duration);
+  };
+
+  const removeToast = (id: string) => {
+    setToasts(prev => prev.filter(t => t.id !== id));
+  };
+
+  // Network State Listener for offline/online changes
+  useEffect(() => {
+    const handleOnline = () => {
+      setIsOnline(true);
+      showToast('Network connection restored. Back online!', 'success');
+    };
+
+    const handleOffline = () => {
+      setIsOnline(false);
+      showToast('Offline Mode: Network connection lost. Playing cached local tracks.', 'warning', 5000);
+    };
+
+    window.addEventListener('online', handleOnline);
+    window.addEventListener('offline', handleOffline);
+
+    return () => {
+      window.removeEventListener('online', handleOnline);
+      window.removeEventListener('offline', handleOffline);
+    };
+  }, []);
+
   // PWA Registration & Install Event Listeners
   useEffect(() => {
     if ('serviceWorker' in navigator) {
-      navigator.serviceWorker.register('/sw.js').then((reg) => {
-        console.log('Harmony Service Worker registered:', reg);
+      navigator.serviceWorker.register('/service-worker.js').then((reg) => {
+        console.log('Harmony Workbox Service Worker registered:', reg);
       }).catch((err) => {
-        console.warn('Service Worker registration warning:', err);
+        console.warn('Fallback registering /sw.js:', err);
+        navigator.serviceWorker.register('/sw.js').catch(() => {});
       });
     }
 
@@ -584,7 +636,58 @@ export const AudioProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     }
   }, [currentTrack]);
 
+  const seekTo = (seconds: number) => {
+    triggerHaptic(8);
+    if (audioRef.current) {
+      audioRef.current.currentTime = seconds;
+      setCurrentTime(seconds);
+    }
+  };
+
+  const nextTrack = () => {
+    triggerHaptic(20);
+    if (queue.length === 0) return;
+    let nextTrk: Track;
+    if (isShuffle) {
+      const randomIdx = Math.floor(Math.random() * queue.length);
+      setQueueIndex(randomIdx);
+      nextTrk = queue[randomIdx];
+    } else {
+      const nextIdx = (queueIndex + 1) % queue.length;
+      setQueueIndex(nextIdx);
+      nextTrk = queue[nextIdx];
+    }
+    setCurrentTrack(nextTrk);
+    setIsPlaying(true);
+    recordTrackPlay(nextTrk);
+  };
+
+  const previousTrack = () => {
+    triggerHaptic(20);
+    if (queue.length === 0) return;
+    if (currentTime > 3) {
+      seekTo(0);
+      return;
+    }
+    const prevIdx = (queueIndex - 1 + queue.length) % queue.length;
+    setQueueIndex(prevIdx);
+    const prevTrk = queue[prevIdx];
+    setCurrentTrack(prevTrk);
+    setIsPlaying(true);
+    recordTrackPlay(prevTrk);
+  };
+
   // Media Session API Setup & Actions
+  const nextTrackRef = useRef(nextTrack);
+  const previousTrackRef = useRef(previousTrack);
+  const seekToRef = useRef(seekTo);
+
+  useEffect(() => {
+    nextTrackRef.current = nextTrack;
+    previousTrackRef.current = previousTrack;
+    seekToRef.current = seekTo;
+  });
+
   useEffect(() => {
     if (!('mediaSession' in navigator) || !currentTrack) return;
 
@@ -592,7 +695,7 @@ export const AudioProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       navigator.mediaSession.metadata = new MediaMetadata({
         title: currentTrack.title,
         artist: currentTrack.artist,
-        album: currentTrack.album,
+        album: currentTrack.album || 'Harmony Music Player',
         artwork: currentTrack.coverUrl ? [
           { src: currentTrack.coverUrl, sizes: '96x96', type: 'image/jpeg' },
           { src: currentTrack.coverUrl, sizes: '128x128', type: 'image/jpeg' },
@@ -601,37 +704,51 @@ export const AudioProvider: React.FC<{ children: React.ReactNode }> = ({ childre
           { src: currentTrack.coverUrl, sizes: '384x384', type: 'image/jpeg' },
           { src: currentTrack.coverUrl, sizes: '512x512', type: 'image/jpeg' }
         ] : [
+          { src: '/icon-192.png', sizes: '192x192', type: 'image/png' },
+          { src: '/icon-512.png', sizes: '512x512', type: 'image/png' },
           { src: '/icon.svg', sizes: '512x512', type: 'image/svg+xml' }
         ]
       });
 
-      navigator.mediaSession.setActionHandler('play', () => {
+      const setHandler = (action: MediaSessionAction, handler: MediaSessionActionHandler | null) => {
+        try {
+          navigator.mediaSession.setActionHandler(action, handler);
+        } catch (e) {
+          console.warn(`MediaSession action ${action} not supported:`, e);
+        }
+      };
+
+      setHandler('play', () => {
         setIsPlaying(true);
       });
-      navigator.mediaSession.setActionHandler('pause', () => {
+      setHandler('pause', () => {
         setIsPlaying(false);
       });
-      navigator.mediaSession.setActionHandler('nexttrack', () => {
-        nextTrack();
+      setHandler('nexttrack', () => {
+        nextTrackRef.current();
       });
-      navigator.mediaSession.setActionHandler('previoustrack', () => {
-        previousTrack();
+      setHandler('previoustrack', () => {
+        previousTrackRef.current();
       });
-      navigator.mediaSession.setActionHandler('seekto', (details) => {
+      setHandler('stop', () => {
+        setIsPlaying(false);
+        seekToRef.current(0);
+      });
+      setHandler('seekto', (details) => {
         if (details.seekTime !== undefined && details.seekTime !== null) {
-          seekTo(details.seekTime);
+          seekToRef.current(details.seekTime);
         }
       });
-      navigator.mediaSession.setActionHandler('seekbackward', (details) => {
+      setHandler('seekbackward', (details) => {
         const skipTime = details.seekOffset || 10;
         if (audioRef.current) {
-          seekTo(Math.max(0, audioRef.current.currentTime - skipTime));
+          seekToRef.current(Math.max(0, audioRef.current.currentTime - skipTime));
         }
       });
-      navigator.mediaSession.setActionHandler('seekforward', (details) => {
+      setHandler('seekforward', (details) => {
         const skipTime = details.seekOffset || 10;
         if (audioRef.current) {
-          seekTo(Math.min(duration, audioRef.current.currentTime + skipTime));
+          seekToRef.current(Math.min(duration, audioRef.current.currentTime + skipTime));
         }
       });
     } catch (e) {
@@ -775,14 +892,6 @@ export const AudioProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     setIsPlaying(prev => !prev);
   };
 
-  const seekTo = (seconds: number) => {
-    triggerHaptic(8);
-    if (audioRef.current) {
-      audioRef.current.currentTime = seconds;
-      setCurrentTime(seconds);
-    }
-  };
-
   const setVolume = (val: number) => {
     const clamped = Math.max(0, Math.min(1, val));
     setVolumeState(clamped);
@@ -794,39 +903,6 @@ export const AudioProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   const toggleMute = () => {
     triggerHaptic(10);
     setIsMuted(prev => !prev);
-  };
-
-  const nextTrack = () => {
-    triggerHaptic(20);
-    if (queue.length === 0) return;
-    let nextTrk: Track;
-    if (isShuffle) {
-      const randomIdx = Math.floor(Math.random() * queue.length);
-      setQueueIndex(randomIdx);
-      nextTrk = queue[randomIdx];
-    } else {
-      const nextIdx = (queueIndex + 1) % queue.length;
-      setQueueIndex(nextIdx);
-      nextTrk = queue[nextIdx];
-    }
-    setCurrentTrack(nextTrk);
-    setIsPlaying(true);
-    recordTrackPlay(nextTrk);
-  };
-
-  const previousTrack = () => {
-    triggerHaptic(20);
-    if (queue.length === 0) return;
-    if (currentTime > 3) {
-      seekTo(0);
-      return;
-    }
-    const prevIdx = (queueIndex - 1 + queue.length) % queue.length;
-    setQueueIndex(prevIdx);
-    const prevTrk = queue[prevIdx];
-    setCurrentTrack(prevTrk);
-    setIsPlaying(true);
-    recordTrackPlay(prevTrk);
   };
 
   const toggleShuffle = () => {
@@ -906,6 +982,35 @@ export const AudioProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   };
 
   // Share Actions
+  const shareTrack = async (track: Track) => {
+    triggerHaptic(12);
+    const trackShareUrl = `${window.location.origin}${window.location.pathname}?track=${track.id}`;
+    const shareData = {
+      title: track.title,
+      text: `Listen to "${track.title}" by ${track.artist} on Harmony Music Player!`,
+      url: trackShareUrl,
+    };
+
+    if ('share' in navigator && typeof navigator.share === 'function') {
+      try {
+        await navigator.share(shareData);
+        showToast(`Shared "${track.title}"`, 'success');
+        return;
+      } catch (err) {
+        if ((err as Error).name === 'AbortError') return;
+        console.warn('Web Share API call failed or cancelled:', err);
+      }
+    }
+
+    // Fallback if navigator.share is unavailable or failed
+    try {
+      await navigator.clipboard.writeText(trackShareUrl);
+      showToast(`Link for "${track.title}" copied to clipboard!`, 'info');
+    } catch {
+      openShareModal(track);
+    }
+  };
+
   const openShareModal = (track: Track) => {
     setShareModalTrack(track);
   };
@@ -1214,6 +1319,11 @@ export const AudioProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   return (
     <AudioContext.Provider
       value={{
+        isOnline,
+        toasts,
+        showToast,
+        removeToast,
+        shareTrack,
         currentTrack,
         queue,
         queueIndex,

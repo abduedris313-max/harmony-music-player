@@ -1,12 +1,55 @@
 import tailwindcss from '@tailwindcss/vite';
 import react from '@vitejs/plugin-react';
 import path from 'path';
-import {defineConfig} from 'vite';
+import { defineConfig } from 'vite';
+import { VitePWA } from 'vite-plugin-pwa';
 
 export default defineConfig(() => {
   return {
     base: process.env.NODE_ENV === 'production' ? '/harmony-music-player/' : '/',
-    plugins: [react(), tailwindcss()],
+    plugins: [
+      react(),
+      tailwindcss(),
+      VitePWA({
+        registerType: 'autoUpdate',
+        injectRegister: 'auto',
+        strategies: 'injectManifest',
+        srcDir: 'public',
+        filename: 'service-worker.js',
+        manifest: {
+          name: 'Harmony Music Player',
+          short_name: 'Harmony',
+          description: 'A modern web audio player with offline support and PWA capabilities',
+          theme_color: '#09090b',
+          background_color: '#09090b',
+          display: 'standalone',
+          orientation: 'portrait',
+          start_url: '.',
+          icons: [
+            {
+              src: 'icon-192.png',
+              sizes: '192x192',
+              type: 'image/png',
+              purpose: 'any maskable'
+            },
+            {
+              src: 'icon-512.png',
+              sizes: '512x512',
+              type: 'image/png',
+              purpose: 'any maskable'
+            },
+            {
+              src: 'icon.svg',
+              sizes: '512x512',
+              type: 'image/svg+xml'
+            }
+          ]
+        },
+        devOptions: {
+          enabled: true
+        }
+      })
+    ],
     resolve: {
       alias: {
         '@': path.resolve(__dirname, '.'),
@@ -21,3 +64,4 @@ export default defineConfig(() => {
     },
   };
 });
+
