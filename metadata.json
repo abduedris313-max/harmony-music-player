@@ -1,0 +1,6 @@
+{
+  "name": "Harmony Music Player",
+  "description": "A web-based music player with a clean, Apple Music-inspired aesthetic.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
