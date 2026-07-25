@@ -2,6 +2,7 @@ import React, { createContext, useContext, useState, useEffect, useRef } from 'r
 import { Track, Playlist, ActiveTab, RepeatMode, ThemeMode } from '../types/music';
 import { MOCK_TRACKS, MOCK_PLAYLISTS } from '../data/mockTracks';
 import { triggerHaptic } from '../utils/haptics';
+import { getAllTracksDB, updateTrackMetadataDB, deleteTrackDB, getAudioBlobDB } from '../lib/db';
 
 export interface CustomEqPreset {
 
@@ -126,6 +127,9 @@ interface AudioContextType {
   // Collection Actions
   toggleFavorite: (trackId: string) => void;
   importLocalFiles: (files: FileList | File[]) => void;
+  updateLocalTrackMetadata: (trackId: string, updates: Partial<Track>) => Promise<void>;
+  deleteLocalTrack: (trackId: string) => Promise<void>;
+  setLocalTracks: React.Dispatch<React.SetStateAction<Track[]>>;
 
   // Playlist Management Actions
   createPlaylist: (name: string, description?: string) => void;
@@ -443,6 +447,30 @@ export const AudioProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   const [showLyrics, setShowLyrics] = useState<boolean>(false);
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [localTracks, setLocalTracks] = useState<Track[]>([]);
+
+  // Load IndexedDB Local Tracks on initial mount
+  useEffect(() => {
+    async function loadStoredTracks() {
+      try {
+        const stored = await getAllTracksDB();
+        if (stored && stored.length > 0) {
+          const rehydrated = await Promise.all(
+            stored.map(async (t) => {
+              const blob = await getAudioBlobDB(t.id);
+              if (blob) {
+                return { ...t, audioUrl: URL.createObjectURL(blob) };
+              }
+              return t;
+            })
+          );
+          setLocalTracks(rehydrated);
+        }
+      } catch (err) {
+        console.warn('IndexedDB initial load notice:', err);
+      }
+    }
+    loadStoredTracks();
+  }, []);
 
   // HTML Audio element & Web Audio ref
   const audioRef = useRef<HTMLAudioElement | null>(null);
@@ -1067,6 +1095,39 @@ export const AudioProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     }
   };
 
+  // Local Track Management Actions
+  const updateLocalTrackMetadata = async (trackId: string, updates: Partial<Track>) => {
+    try {
+      await updateTrackMetadataDB(trackId, updates);
+      setLocalTracks((prev) =>
+        prev.map((t) => (t.id === trackId ? { ...t, ...updates } : t))
+      );
+      setQueue((prev) =>
+        prev.map((t) => (t.id === trackId ? { ...t, ...updates } : t))
+      );
+      if (currentTrack && currentTrack.id === trackId) {
+        setCurrentTrack((prev) => (prev ? { ...prev, ...updates } : null));
+      }
+      showToast('Track metadata updated successfully', 'success');
+    } catch (err) {
+      console.error('Failed to update track metadata:', err);
+    }
+  };
+
+  const deleteLocalTrack = async (trackId: string) => {
+    try {
+      await deleteTrackDB(trackId);
+      setLocalTracks((prev) => prev.filter((t) => t.id !== trackId));
+      setQueue((prev) => prev.filter((t) => t.id !== trackId));
+      if (currentTrack && currentTrack.id === trackId) {
+        nextTrack();
+      }
+      showToast('Track deleted from library', 'info');
+    } catch (err) {
+      console.error('Failed to delete track:', err);
+    }
+  };
+
   // Playlist Management Actions
   const createPlaylist = (name: string, description: string = '') => {
     const newPl: Playlist = {
@@ -1365,6 +1426,9 @@ export const AudioProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         shareModalTrack,
         favoriteTrackIds,
         localTracks,
+        setLocalTracks,
+        updateLocalTrackMetadata,
+        deleteLocalTrack,
         customPlaylists,
         recentlyPlayed,
         mostPlayedTracks,

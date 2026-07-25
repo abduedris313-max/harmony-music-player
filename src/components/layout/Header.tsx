@@ -1,6 +1,7 @@
 import React, { useRef } from 'react';
 import { Search, Sun, Moon, Upload, ChevronLeft, ChevronRight, HardDrive, Music2, Smartphone, Download } from 'lucide-react';
 import { useAudio } from '../../context/AudioContext';
+import { DLNADeviceSelector } from '../dlna/DLNADeviceSelector';
 
 export const Header: React.FC = () => {
   const {
@@ -64,8 +65,11 @@ export const Header: React.FC = () => {
         </div>
       </div>
 
-      {/* Right Controls: Local Audio Importer & Theme Switch */}
+      {/* Right Controls: DLNA Cast, Local Audio Importer & Theme Switch */}
       <div className="flex items-center gap-3">
+        {/* DLNA & Remote Cast Output Selector */}
+        <DLNADeviceSelector />
+
         {/* Mobile / PWA App Guide Button */}
         <button
           onClick={openMobileInstallModal}
