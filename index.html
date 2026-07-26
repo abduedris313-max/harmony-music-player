@@ -12,6 +12,18 @@
     <link rel="icon" type="image/png" sizes="512x512" href="/icon-512.png" />
     <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
     
+    <!-- PWA Early Install Prompt Capture Script -->
+    <script>
+      window.__deferredInstallPrompt = null;
+      window.addEventListener('beforeinstallprompt', function(e) {
+        e.preventDefault();
+        window.__deferredInstallPrompt = e;
+        if (typeof window.__onBeforeInstallPrompt === 'function') {
+          window.__onBeforeInstallPrompt(e);
+        }
+      });
+    </script>
+
     <!-- Theme & Mobile Optimizations -->
     <meta name="theme-color" content="#f43f5e" />
     <meta name="mobile-web-app-capable" content="yes" />

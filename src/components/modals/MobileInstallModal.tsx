@@ -133,36 +133,37 @@ export const MobileInstallModal: React.FC<MobileInstallModalProps> = ({
                   </div>
                   <div className="space-y-1">
                     <h4 className="text-xs font-bold text-rose-600 dark:text-rose-400">
-                      PWA Installation Requirements
+                      Chrome Mobile PWA Installation Guide
                     </h4>
                     <p className="text-xs text-zinc-600 dark:text-zinc-300 leading-relaxed">
-                      Browsers allow one-click PWA installation on <strong>HTTPS</strong> or <strong>localhost</strong>. When accessing via <strong>0.0.0.0</strong> or embedded in an iframe preview, browsers require direct secure navigation.
+                      Chrome on Mobile requires accessing the site over a top-level window (not inside an embedded iframe preview) over <strong>HTTPS</strong> or <strong>localhost</strong>.
                     </p>
                   </div>
                 </div>
               </div>
 
-              {/* Iframe or Non-Localhost HTTP Notice */}
+              {/* Iframe Notice for AI Studio Preview */}
               {typeof window !== 'undefined' && window.self !== window.top && (
-                <div className="p-4 rounded-2xl bg-amber-500/10 border border-amber-500/20 space-y-2">
+                <div className="p-4 rounded-2xl bg-amber-500/10 border border-amber-500/20 space-y-3">
                   <div className="flex items-center justify-between">
-                    <span className="text-xs font-bold text-amber-700 dark:text-amber-400">
-                      Embedded Preview Detected
+                    <span className="text-xs font-bold text-amber-700 dark:text-amber-400 flex items-center gap-1.5">
+                      <ExternalLink className="w-4 h-4" />
+                      Embedded Preview Frame Detected
                     </span>
-                    <button
-                      onClick={() => {
-                        triggerHaptic(15);
-                        window.open(window.location.href, '_blank');
-                      }}
-                      className="px-3 py-1.5 rounded-lg bg-amber-500 hover:bg-amber-600 text-white font-bold text-xs shadow-sm flex items-center gap-1"
-                    >
-                      <ExternalLink className="w-3.5 h-3.5" />
-                      Open in New Tab
-                    </button>
                   </div>
-                  <p className="text-[11px] text-zinc-600 dark:text-zinc-300">
-                    Browsers hide the native install prompt inside preview frames. Open in a new tab to trigger the direct PWA install prompt.
+                  <p className="text-xs text-zinc-600 dark:text-zinc-300 leading-relaxed">
+                    Google Chrome <strong>blocks</strong> PWA installation prompts inside preview frames. Open Harmony in a new tab to trigger native Chrome app installation!
                   </p>
+                  <button
+                    onClick={() => {
+                      triggerHaptic(15);
+                      window.open(window.location.href, '_blank');
+                    }}
+                    className="w-full py-2.5 px-4 rounded-xl bg-amber-500 hover:bg-amber-600 text-white font-bold text-xs shadow-md shadow-amber-500/20 flex items-center justify-center gap-2 transition-transform hover:scale-[1.01] active:scale-95"
+                  >
+                    <ExternalLink className="w-4 h-4" />
+                    Open Harmony in Standalone Chrome Tab
+                  </button>
                 </div>
               )}
 
@@ -170,10 +171,10 @@ export const MobileInstallModal: React.FC<MobileInstallModalProps> = ({
                 <div className="p-4 rounded-2xl bg-zinc-50 dark:bg-zinc-800/60 border border-zinc-200 dark:border-zinc-700/60 space-y-3">
                   <div className="flex items-center justify-between">
                     <span className="text-xs font-bold text-zinc-800 dark:text-zinc-200">
-                      Ready for One-Click Install
+                      Native Prompt Available
                     </span>
                     <span className="text-[10px] font-bold text-emerald-500 bg-emerald-500/10 px-2 py-0.5 rounded-full">
-                      Supported
+                      Ready
                     </span>
                   </div>
                   <button
@@ -191,31 +192,31 @@ export const MobileInstallModal: React.FC<MobileInstallModalProps> = ({
                 <div className="p-4 rounded-2xl bg-emerald-500/10 border border-emerald-500/20 text-emerald-700 dark:text-emerald-400 flex items-center gap-3">
                   <CheckCircle2 className="w-6 h-6 shrink-0 text-emerald-500" />
                   <div>
-                    <h5 className="text-xs font-bold">App Already Running Standalone</h5>
+                    <h5 className="text-xs font-bold">App Already Installed</h5>
                     <p className="text-[11px] opacity-90 mt-0.5">
-                      You are using Harmony as an installed app on your device screen!
+                      Harmony is running in standalone PWA app mode on your device!
                     </p>
                   </div>
                 </div>
               ) : (
                 <div className="p-4 rounded-2xl bg-zinc-50 dark:bg-zinc-800/60 border border-zinc-200 dark:border-zinc-700/60 space-y-3">
                   <h5 className="text-xs font-bold text-zinc-900 dark:text-white flex items-center gap-1.5">
-                    <Globe className="w-4 h-4 text-rose-500" /> Installing on 0.0.0.0 / Custom IP Hosts:
+                    <Globe className="w-4 h-4 text-rose-500" /> Chrome Mobile Manual Install Steps:
                   </h5>
-                  <ul className="text-xs text-zinc-600 dark:text-zinc-300 space-y-2">
-                    <li className="flex items-start gap-2">
-                      <span className="font-bold text-rose-500">•</span>
-                      <span><strong>Using localhost instead of 0.0.0.0:</strong> Open <code className="bg-zinc-200 dark:bg-zinc-700 px-1 py-0.5 rounded text-[11px] font-mono">http://localhost:3000</code> in Chrome/Edge — browsers treat localhost as secure and unlock immediate PWA installation!</span>
-                    </li>
-                    <li className="flex items-start gap-2">
-                      <span className="font-bold text-rose-500">•</span>
-                      <span><strong>Testing raw IP / 0.0.0.0 in Chrome:</strong> Enable <code className="bg-zinc-200 dark:bg-zinc-700 px-1 py-0.5 rounded text-[11px] font-mono">chrome://flags/#unsafely-treat-insecure-origin-as-secure</code> and add your server IP to bypass browser origin limits.</span>
-                    </li>
-                    <li className="flex items-start gap-2">
-                      <span className="font-bold text-rose-500">•</span>
-                      <span><strong>Chrome Menu Install:</strong> Click browser menu <strong className="text-zinc-800 dark:text-zinc-200">(⋮) &gt; "Install Harmony"</strong> or "Add to Home Screen".</span>
-                    </li>
-                  </ul>
+                  <div className="space-y-2 text-xs text-zinc-600 dark:text-zinc-300">
+                    <div className="p-2.5 rounded-xl bg-white dark:bg-zinc-900 border border-zinc-200/60 dark:border-zinc-800 flex items-start gap-2.5">
+                      <span className="font-bold text-rose-500 text-sm">1.</span>
+                      <span><strong>Open Top Window:</strong> Ensure you are in a direct browser tab (not an iframe preview).</span>
+                    </div>
+                    <div className="p-2.5 rounded-xl bg-white dark:bg-zinc-900 border border-zinc-200/60 dark:border-zinc-800 flex items-start gap-2.5">
+                      <span className="font-bold text-rose-500 text-sm">2.</span>
+                      <span><strong>Tap Chrome Menu:</strong> Tap the 3 dots <strong>(⋮)</strong> in Chrome Mobile's top-right corner.</span>
+                    </div>
+                    <div className="p-2.5 rounded-xl bg-white dark:bg-zinc-900 border border-zinc-200/60 dark:border-zinc-800 flex items-start gap-2.5">
+                      <span className="font-bold text-rose-500 text-sm">3.</span>
+                      <span><strong>Select Install:</strong> Tap <strong>"Install app"</strong> or <strong>"Add to Home screen"</strong>.</span>
+                    </div>
+                  </div>
                 </div>
               )}
             </div>

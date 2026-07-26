@@ -27,6 +27,13 @@ export interface BeforeInstallPromptEvent extends Event {
   prompt(): Promise<void>;
 }
 
+declare global {
+  interface Window {
+    __deferredInstallPrompt?: BeforeInstallPromptEvent | null;
+    __onBeforeInstallPrompt?: (e: BeforeInstallPromptEvent) => void;
+  }
+}
+
 interface AudioContextType {
   // Network & Global Toast State
   isOnline: boolean;
@@ -322,9 +329,22 @@ export const AudioProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       });
     }
 
+    // Check if early install prompt was captured before React mounted
+    if (window.__deferredInstallPrompt) {
+      setDeferredInstallPrompt(window.__deferredInstallPrompt);
+      setIsInstallable(true);
+    }
+
+    window.__onBeforeInstallPrompt = (e: BeforeInstallPromptEvent) => {
+      setDeferredInstallPrompt(e);
+      setIsInstallable(true);
+    };
+
     const handleBeforeInstallPrompt = (e: Event) => {
       e.preventDefault();
-      setDeferredInstallPrompt(e as BeforeInstallPromptEvent);
+      const promptEvent = e as BeforeInstallPromptEvent;
+      window.__deferredInstallPrompt = promptEvent;
+      setDeferredInstallPrompt(promptEvent);
       setIsInstallable(true);
     };
 
@@ -332,6 +352,7 @@ export const AudioProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       setIsInstallable(false);
       setIsAppInstalled(true);
       setDeferredInstallPrompt(null);
+      window.__deferredInstallPrompt = null;
     };
 
     window.addEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
