@@ -2,7 +2,7 @@ import React, { createContext, useContext, useState, useEffect, useRef } from 'r
 import { Track, Playlist, ActiveTab, RepeatMode, ThemeMode } from '../types/music';
 import { MOCK_TRACKS, MOCK_PLAYLISTS } from '../data/mockTracks';
 import { triggerHaptic } from '../utils/haptics';
-import { getAllTracksDB, updateTrackMetadataDB, deleteTrackDB, getAudioBlobDB } from '../lib/db';
+import { getAllTracksDB, updateTrackMetadataDB, deleteTrackDB, getAudioBlobDB, saveTrackDB, saveAudioBlobDB } from '../lib/db';
 
 export interface CustomEqPreset {
 
@@ -1048,11 +1048,12 @@ export const AudioProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   };
 
   // Local File Scanner & Reader
-  const importLocalFiles = (files: FileList | File[]) => {
+  const importLocalFiles = async (files: FileList | File[]) => {
     const fileArray = Array.from(files);
     const newTracks: Track[] = [];
 
-    fileArray.forEach((file, index) => {
+    for (let index = 0; index < fileArray.length; index++) {
+      const file = fileArray[index];
       if (file.type.startsWith('audio/') || file.name.match(/\.(mp3|flac|wav|m4a|aac|ogg)$/i)) {
         const objectUrl = URL.createObjectURL(file);
         const cleanName = file.name.replace(/\.[^/.]+$/, "");
@@ -1084,8 +1085,16 @@ export const AudioProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         };
 
         newTracks.push(track);
+
+        // Persist track metadata & blob in Dexie DB for offline refresh resilience
+        try {
+          await saveTrackDB(track);
+          await saveAudioBlobDB(track.id, file, file.name);
+        } catch (err) {
+          console.warn('Dexie DB save warning for local file:', err);
+        }
       }
-    });
+    }
 
     if (newTracks.length > 0) {
       setLocalTracks(prev => [...newTracks, ...prev]);

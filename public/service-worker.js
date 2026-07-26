@@ -1,4 +1,8 @@
-importScripts('https://storage.googleapis.com/workbox-cdn/releases/7.0.0/workbox-sw.js');
+try {
+  importScripts('https://storage.googleapis.com/workbox-cdn/releases/7.0.0/workbox-sw.js');
+} catch (e) {
+  console.warn('Offline or CDN blocked workbox-sw.js import:', e);
+}
 
 if (self.workbox) {
   console.log('Workbox initialized in Harmony Service Worker');
@@ -6,7 +10,7 @@ if (self.workbox) {
   // Precache static assets if manifest is injected
   self.workbox.precaching.precacheAndRoute(self.__WB_MANIFEST || []);
 
-  // CacheFirst strategy for audio files (.mp3, .wav, .aac, .flac, .ogg, .m4a or audio destination)
+  // CacheFirst strategy for audio files (.mp3, .wav, .aac, .flac, .ogg, .m4a)
   self.workbox.routing.registerRoute(
     ({ request, url }) =>
       request.destination === 'audio' ||
@@ -46,11 +50,27 @@ if (self.workbox) {
     })
   );
 } else {
-  console.warn('Workbox CDN failed to load in service worker.');
+  console.warn('Workbox CDN unavailable; falling back to native service worker caching.');
 }
 
+// Native Fetch Event Handler (Guarantees Chrome Mobile PWA Install Criteria check)
+self.addEventListener('fetch', (event) => {
+  if (self.workbox) {
+    // Workbox handles routing
+    return;
+  }
+  // Fallback network-first handler if workbox didn't load
+  if (event.request.mode === 'navigate') {
+    event.respondWith(
+      fetch(event.request).catch(() => {
+        return caches.match(event.request) || caches.match('/');
+      })
+    );
+  }
+});
+
 // Immediate activation
-self.addEventListener('install', () => {
+self.addEventListener('install', (event) => {
   self.skipWaiting();
 });
 

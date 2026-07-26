@@ -1,4 +1,4 @@
-import { openDB, DBSchema, IDBPDatabase } from 'idb';
+import Dexie, { Table } from 'dexie';
 import { Track, Playlist } from '../types/music';
 
 export interface CustomTagEdit {
@@ -19,124 +19,109 @@ export interface VirtualFolder {
   createdAt: number;
 }
 
-interface HarmonyDBSchema extends DBSchema {
-  tracks: {
-    key: string;
-    value: Track;
-    indexes: {
-      'by-artist': string;
-      'by-album': string;
-      'by-local': number;
-    };
-  };
-  audioBlobs: {
-    key: string;
-    value: {
-      id: string;
-      blob: Blob;
-      mimeType: string;
-      name: string;
-      updatedAt: number;
-    };
-  };
-  playlists: {
-    key: string;
-    value: Playlist;
-  };
-  virtualFolders: {
-    key: string;
-    value: VirtualFolder;
-  };
-  customTags: {
-    key: string;
-    value: CustomTagEdit;
-  };
+export interface AudioBlobRecord {
+  id: string;
+  blob: Blob;
+  mimeType: string;
+  name: string;
+  updatedAt: number;
 }
 
-const DB_NAME = 'harmony_music_player_db';
-const DB_VERSION = 1;
+/**
+ * HarmonyDexieDB: High-performance IndexedDB wrapper powered by Dexie.js
+ * Manages local track metadata, audio files/blobs, playlists, custom tags, and virtual folders.
+ */
+export class HarmonyDexieDB extends Dexie {
+  tracks!: Table<Track, string>;
+  audioBlobs!: Table<AudioBlobRecord, string>;
+  playlists!: Table<Playlist, string>;
+  virtualFolders!: Table<VirtualFolder, string>;
+  customTags!: Table<CustomTagEdit, string>;
 
-let dbPromise: Promise<IDBPDatabase<HarmonyDBSchema>> | null = null;
-
-export const getDB = (): Promise<IDBPDatabase<HarmonyDBSchema>> => {
-  if (!dbPromise) {
-    dbPromise = openDB<HarmonyDBSchema>(DB_NAME, DB_VERSION, {
-      upgrade(db) {
-        // Tracks Store
-        if (!db.objectStoreNames.contains('tracks')) {
-          const trackStore = db.createObjectStore('tracks', { keyPath: 'id' });
-          trackStore.createIndex('by-artist', 'artist');
-          trackStore.createIndex('by-album', 'album');
-          trackStore.createIndex('by-local', 'isLocal');
-        }
-
-        // Audio Blobs Store
-        if (!db.objectStoreNames.contains('audioBlobs')) {
-          db.createObjectStore('audioBlobs', { keyPath: 'id' });
-        }
-
-        // Playlists Store
-        if (!db.objectStoreNames.contains('playlists')) {
-          db.createObjectStore('playlists', { keyPath: 'id' });
-        }
-
-        // Virtual Folders Store
-        if (!db.objectStoreNames.contains('virtualFolders')) {
-          db.createObjectStore('virtualFolders', { keyPath: 'id' });
-        }
-
-        // Custom Tags Store
-        if (!db.objectStoreNames.contains('customTags')) {
-          db.createObjectStore('customTags', { keyPath: 'trackId' });
-        }
-      },
+  constructor() {
+    super('harmony_music_player_dexie_db');
+    
+    // Schema definition for IndexedDB object stores & indexes
+    this.version(1).stores({
+      tracks: 'id, title, artist, album, genre, isLocal',
+      audioBlobs: 'id, name, updatedAt',
+      playlists: 'id, name',
+      virtualFolders: 'id, name',
+      customTags: 'trackId, title, artist, album',
     });
   }
-  return dbPromise;
-};
+}
+
+// Singleton database instance
+export const dexieDb = new HarmonyDexieDB();
+
+// --- Migration helper from legacy IDB if needed ---
+let migrationAttempted = false;
+async function checkAndMigrateLegacyData(): Promise<void> {
+  if (migrationAttempted) return;
+  migrationAttempted = true;
+
+  try {
+    const dexieTracksCount = await dexieDb.tracks.count();
+    if (dexieTracksCount > 0) return; // Dexie DB already populated
+
+    // Attempt legacy IDB read if IndexedDB exists
+    if (typeof window !== 'undefined' && 'indexedDB' in window) {
+      const req = indexedDB.open('harmony_music_player_db');
+      req.onsuccess = (event) => {
+        const legacyDb = (event.target as IDBOpenDBRequest).result;
+        if (legacyDb.objectStoreNames.contains('tracks')) {
+          const tx = legacyDb.transaction('tracks', 'readonly');
+          const store = tx.objectStore('tracks');
+          const getAllReq = store.getAll();
+          getAllReq.onsuccess = async () => {
+            const oldTracks = getAllReq.result as Track[];
+            if (oldTracks && oldTracks.length > 0) {
+              await dexieDb.tracks.bulkPut(oldTracks);
+            }
+          };
+        }
+      };
+    }
+  } catch (err) {
+    console.warn('Legacy IDB migration notice:', err);
+  }
+}
 
 // --- Tracks API ---
 export async function saveTrackDB(track: Track): Promise<void> {
-  const db = await getDB();
-  await db.put('tracks', track);
+  await dexieDb.tracks.put(track);
 }
 
 export async function saveTrackBatchDB(tracks: Track[]): Promise<void> {
-  const db = await getDB();
-  const tx = db.transaction('tracks', 'readwrite');
-  await Promise.all(tracks.map(t => tx.store.put(t)));
-  await tx.done;
+  await dexieDb.tracks.bulkPut(tracks);
 }
 
 export async function getAllTracksDB(): Promise<Track[]> {
-  const db = await getDB();
-  return db.getAll('tracks');
+  await checkAndMigrateLegacyData();
+  return dexieDb.tracks.toArray();
 }
 
 export async function getTrackDB(id: string): Promise<Track | undefined> {
-  const db = await getDB();
-  return db.get('tracks', id);
+  return dexieDb.tracks.get(id);
 }
 
 export async function deleteTrackDB(id: string): Promise<void> {
-  const db = await getDB();
-  const tx = db.transaction(['tracks', 'audioBlobs', 'customTags'], 'readwrite');
-  await tx.objectStore('tracks').delete(id);
-  await tx.objectStore('audioBlobs').delete(id);
-  await tx.objectStore('customTags').delete(id);
-  await tx.done;
+  await dexieDb.transaction('rw', [dexieDb.tracks, dexieDb.audioBlobs, dexieDb.customTags], async () => {
+    await dexieDb.tracks.delete(id);
+    await dexieDb.audioBlobs.delete(id);
+    await dexieDb.customTags.delete(id);
+  });
 }
 
 export async function updateTrackMetadataDB(id: string, updates: Partial<Track>): Promise<Track | null> {
-  const db = await getDB();
-  const existing = await db.get('tracks', id);
+  const existing = await dexieDb.tracks.get(id);
   if (!existing) return null;
 
   const updatedTrack: Track = { ...existing, ...updates };
-  await db.put('tracks', updatedTrack);
+  await dexieDb.tracks.put(updatedTrack);
 
-  // Save custom tag edits
-  await db.put('customTags', {
+  await dexieDb.customTags.put({
     trackId: id,
     title: updates.title,
     artist: updates.artist,
@@ -150,8 +135,7 @@ export async function updateTrackMetadataDB(id: string, updates: Partial<Track>)
 
 // --- Audio Blobs API ---
 export async function saveAudioBlobDB(id: string, blob: Blob, name: string): Promise<void> {
-  const db = await getDB();
-  await db.put('audioBlobs', {
+  await dexieDb.audioBlobs.put({
     id,
     blob,
     mimeType: blob.type || 'audio/mpeg',
@@ -161,40 +145,33 @@ export async function saveAudioBlobDB(id: string, blob: Blob, name: string): Pro
 }
 
 export async function getAudioBlobDB(id: string): Promise<Blob | null> {
-  const db = await getDB();
-  const entry = await db.get('audioBlobs', id);
+  const entry = await dexieDb.audioBlobs.get(id);
   return entry ? entry.blob : null;
 }
 
 // --- Playlists & Virtual Folders API ---
 export async function savePlaylistDB(playlist: Playlist): Promise<void> {
-  const db = await getDB();
-  await db.put('playlists', playlist);
+  await dexieDb.playlists.put(playlist);
 }
 
 export async function getAllPlaylistsDB(): Promise<Playlist[]> {
-  const db = await getDB();
-  return db.getAll('playlists');
+  return dexieDb.playlists.toArray();
 }
 
 export async function deletePlaylistDB(id: string): Promise<void> {
-  const db = await getDB();
-  await db.delete('playlists', id);
+  await dexieDb.playlists.delete(id);
 }
 
 export async function saveVirtualFolderDB(folder: VirtualFolder): Promise<void> {
-  const db = await getDB();
-  await db.put('virtualFolders', folder);
+  await dexieDb.virtualFolders.put(folder);
 }
 
 export async function getAllVirtualFoldersDB(): Promise<VirtualFolder[]> {
-  const db = await getDB();
-  return db.getAll('virtualFolders');
+  return dexieDb.virtualFolders.toArray();
 }
 
 export async function deleteVirtualFolderDB(id: string): Promise<void> {
-  const db = await getDB();
-  await db.delete('virtualFolders', id);
+  await dexieDb.virtualFolders.delete(id);
 }
 
 // --- Storage Status & Maintenance ---
@@ -241,11 +218,10 @@ export async function getStorageEstimateDB(): Promise<StorageEstimateInfo> {
 }
 
 export async function clearAllMediaCacheDB(): Promise<void> {
-  const db = await getDB();
-  const tx = db.transaction(['tracks', 'audioBlobs', 'virtualFolders', 'customTags'], 'readwrite');
-  await tx.objectStore('tracks').clear();
-  await tx.objectStore('audioBlobs').clear();
-  await tx.objectStore('virtualFolders').clear();
-  await tx.objectStore('customTags').clear();
-  await tx.done;
+  await dexieDb.transaction('rw', [dexieDb.tracks, dexieDb.audioBlobs, dexieDb.virtualFolders, dexieDb.customTags], async () => {
+    await dexieDb.tracks.clear();
+    await dexieDb.audioBlobs.clear();
+    await dexieDb.virtualFolders.clear();
+    await dexieDb.customTags.clear();
+  });
 }
