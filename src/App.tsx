@@ -9,6 +9,7 @@ import { NowPlayingModal } from './components/player/NowPlayingModal';
 import { BrowseView } from './components/views/BrowseView';
 import { LibraryView } from './components/views/LibraryView';
 import { LocalFilesView } from './components/views/LocalFilesView';
+import { OfflineQueueView } from './components/views/OfflineQueueView';
 import { SearchView } from './components/views/SearchView';
 import { PlaylistDetailView } from './components/views/PlaylistDetailView';
 import { SettingsView } from './components/views/SettingsView';
@@ -41,6 +42,8 @@ const MainContent: React.FC = () => {
         return <LibraryView />;
       case 'local':
         return <LocalFilesView />;
+      case 'offline':
+        return <OfflineQueueView />;
       case 'search':
         return <SearchView />;
       case 'playlist-detail':

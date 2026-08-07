@@ -61,6 +61,7 @@ export type ActiveTab =
   | 'playlist-detail'
   | 'settings'
   | 'recently-played'
-  | 'most-played';
+  | 'most-played'
+  | 'offline';
 
 export type ThemeMode = 'dark' | 'light' | 'system';

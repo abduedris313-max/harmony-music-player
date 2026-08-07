@@ -27,9 +27,18 @@ export interface AudioBlobRecord {
   updatedAt: number;
 }
 
+export interface OfflineQueueRecord {
+  trackId: string;
+  track: Track;
+  queuedAt: number;
+  downloadStatus: 'queued' | 'downloading' | 'ready' | 'error';
+  blobSize?: number;
+  errorMessage?: string;
+}
+
 /**
  * HarmonyDexieDB: High-performance IndexedDB wrapper powered by Dexie.js
- * Manages local track metadata, audio files/blobs, playlists, custom tags, and virtual folders.
+ * Manages local track metadata, audio files/blobs, playlists, custom tags, virtual folders, and offline queue.
  */
 export class HarmonyDexieDB extends Dexie {
   tracks!: Table<Track, string>;
@@ -37,6 +46,7 @@ export class HarmonyDexieDB extends Dexie {
   playlists!: Table<Playlist, string>;
   virtualFolders!: Table<VirtualFolder, string>;
   customTags!: Table<CustomTagEdit, string>;
+  offlineQueue!: Table<OfflineQueueRecord, string>;
 
   constructor() {
     super('harmony_music_player_dexie_db');
@@ -48,6 +58,7 @@ export class HarmonyDexieDB extends Dexie {
       playlists: 'id, name',
       virtualFolders: 'id, name',
       customTags: 'trackId, title, artist, album',
+      offlineQueue: 'trackId, queuedAt, downloadStatus',
     });
   }
 }
@@ -218,10 +229,83 @@ export async function getStorageEstimateDB(): Promise<StorageEstimateInfo> {
 }
 
 export async function clearAllMediaCacheDB(): Promise<void> {
-  await dexieDb.transaction('rw', [dexieDb.tracks, dexieDb.audioBlobs, dexieDb.virtualFolders, dexieDb.customTags], async () => {
+  await dexieDb.transaction('rw', [dexieDb.tracks, dexieDb.audioBlobs, dexieDb.virtualFolders, dexieDb.customTags, dexieDb.offlineQueue], async () => {
     await dexieDb.tracks.clear();
     await dexieDb.audioBlobs.clear();
     await dexieDb.virtualFolders.clear();
     await dexieDb.customTags.clear();
+    await dexieDb.offlineQueue.clear();
   });
 }
+
+// --- Offline Queue API (Dexie.js) ---
+export async function queueTrackForOfflineDB(track: Track, audioBlob?: Blob): Promise<OfflineQueueRecord> {
+  // 1. Ensure track metadata is saved in Dexie tracks store
+  await dexieDb.tracks.put(track);
+
+  // 2. Fetch or save audio Blob for offline playback
+  let blobToSave = audioBlob;
+  if (!blobToSave) {
+    const existingBlob = await dexieDb.audioBlobs.get(track.id);
+    if (existingBlob) {
+      blobToSave = existingBlob.blob;
+    } else if (track.audioUrl) {
+      try {
+        const response = await fetch(track.audioUrl);
+        if (response.ok) {
+          blobToSave = await response.blob();
+        }
+      } catch (e) {
+        console.warn('Network fetch failed for offline track caching:', e);
+      }
+    }
+  }
+
+  if (blobToSave) {
+    await saveAudioBlobDB(track.id, blobToSave, track.title);
+  }
+
+  const record: OfflineQueueRecord = {
+    trackId: track.id,
+    track,
+    queuedAt: Date.now(),
+    downloadStatus: blobToSave ? 'ready' : 'queued',
+    blobSize: blobToSave?.size || 0,
+  };
+
+  await dexieDb.offlineQueue.put(record);
+  return record;
+}
+
+export async function removeTrackFromOfflineDB(trackId: string): Promise<void> {
+  await dexieDb.transaction('rw', [dexieDb.offlineQueue, dexieDb.audioBlobs, dexieDb.tracks], async () => {
+    await dexieDb.offlineQueue.delete(trackId);
+    const trk = await dexieDb.tracks.get(trackId);
+    if (!trk?.isLocal) {
+      await dexieDb.audioBlobs.delete(trackId);
+    }
+  });
+}
+
+export async function getAllOfflineQueueDB(): Promise<OfflineQueueRecord[]> {
+  return dexieDb.offlineQueue.orderBy('queuedAt').reverse().toArray();
+}
+
+export async function isTrackQueuedOfflineDB(trackId: string): Promise<boolean> {
+  const item = await dexieDb.offlineQueue.get(trackId);
+  return !!item;
+}
+
+export async function clearOfflineQueueDB(): Promise<void> {
+  await dexieDb.transaction('rw', [dexieDb.offlineQueue, dexieDb.audioBlobs, dexieDb.tracks], async () => {
+    const items = await dexieDb.offlineQueue.toArray();
+    for (const item of items) {
+      const trk = await dexieDb.tracks.get(item.trackId);
+      if (!trk?.isLocal) {
+        await dexieDb.audioBlobs.delete(item.trackId);
+      }
+    }
+    await dexieDb.offlineQueue.clear();
+  });
+}
+

@@ -17,7 +17,9 @@ import {
   Sparkles,
   Cast,
   Music,
-  Disc
+  Disc,
+  Download,
+  CheckCircle2
 } from 'lucide-react';
 import { useAudio } from '../../context/AudioContext';
 import { Track } from '../../types/music';
@@ -44,6 +46,9 @@ export const NowPlayingModal: React.FC = () => {
     favoriteTrackIds,
     toggleFavorite,
     shareTrack,
+    queueTrackForOffline,
+    removeTrackFromOffline,
+    isTrackQueuedOffline,
     isNowPlayingExpanded,
     setNowPlayingExpanded,
     showLyrics,
@@ -228,6 +233,24 @@ export const NowPlayingModal: React.FC = () => {
               </p>
             </div>
             <div className="flex items-center gap-2">
+              <button
+                id="nowplaying-offline-btn"
+                onClick={() => {
+                  if (isTrackQueuedOffline(currentTrack.id)) {
+                    removeTrackFromOffline(currentTrack.id);
+                  } else {
+                    queueTrackForOffline(currentTrack);
+                  }
+                }}
+                className={`p-2.5 rounded-full backdrop-blur-md transition-colors ${
+                  isTrackQueuedOffline(currentTrack.id)
+                    ? 'bg-emerald-500/20 text-emerald-400'
+                    : 'bg-white/5 text-white/60 hover:text-white'
+                }`}
+                title={isTrackQueuedOffline(currentTrack.id) ? 'Queued for Offline Listening (Click to remove)' : 'Queue for Offline Listening'}
+              >
+                <Download className="w-5 h-5" />
+              </button>
               <button
                 onClick={() => shareTrack(currentTrack)}
                 className="p-2.5 rounded-full bg-white/5 text-white/70 hover:text-white backdrop-blur-md transition-colors"

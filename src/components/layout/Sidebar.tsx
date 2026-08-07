@@ -13,7 +13,8 @@ import {
   History,
   Flame,
   Settings,
-  Sliders
+  Sliders,
+  Download
 } from 'lucide-react';
 import { useAudio } from '../../context/AudioContext';
 import { ActiveTab } from '../../types/music';
@@ -28,6 +29,7 @@ export const Sidebar: React.FC = () => {
     selectedPlaylistId,
     favoriteTrackIds,
     localTracks,
+    offlineQueueRecords,
     recentlyPlayed,
     mostPlayedTracks
   } = useAudio();
@@ -52,7 +54,8 @@ export const Sidebar: React.FC = () => {
     { id: 'albums', label: 'Albums', icon: <Disc className="w-4 h-4" /> },
     { id: 'artists', label: 'Artists', icon: <User className="w-4 h-4" /> },
     { id: 'favorites', label: 'Loved Songs', icon: <Heart className="w-4 h-4 text-rose-500" />, badge: favoriteTrackIds.length },
-    { id: 'local', label: 'Downloaded / Local', icon: <HardDrive className="w-4 h-4 text-blue-500" />, badge: localTracks.length }
+    { id: 'offline', label: 'Offline Queue', icon: <Download className="w-4 h-4 text-emerald-500" />, badge: offlineQueueRecords.length },
+    { id: 'local', label: 'Local Files', icon: <HardDrive className="w-4 h-4 text-blue-500" />, badge: localTracks.length }
   ];
 
   const smartItems: { id: ActiveTab; label: string; icon: React.ReactNode; badge?: number }[] = [

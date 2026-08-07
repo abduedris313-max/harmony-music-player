@@ -2,7 +2,20 @@ import React, { createContext, useContext, useState, useEffect, useRef } from 'r
 import { Track, Playlist, ActiveTab, RepeatMode, ThemeMode } from '../types/music';
 import { MOCK_TRACKS, MOCK_PLAYLISTS } from '../data/mockTracks';
 import { triggerHaptic } from '../utils/haptics';
-import { getAllTracksDB, updateTrackMetadataDB, deleteTrackDB, getAudioBlobDB, saveTrackDB, saveAudioBlobDB } from '../lib/db';
+import {
+  getAllTracksDB,
+  updateTrackMetadataDB,
+  deleteTrackDB,
+  getAudioBlobDB,
+  saveTrackDB,
+  saveAudioBlobDB,
+  queueTrackForOfflineDB,
+  removeTrackFromOfflineDB,
+  getAllOfflineQueueDB,
+  isTrackQueuedOfflineDB,
+  clearOfflineQueueDB,
+  OfflineQueueRecord
+} from '../lib/db';
 
 export interface CustomEqPreset {
 
@@ -137,6 +150,13 @@ interface AudioContextType {
   updateLocalTrackMetadata: (trackId: string, updates: Partial<Track>) => Promise<void>;
   deleteLocalTrack: (trackId: string) => Promise<void>;
   setLocalTracks: React.Dispatch<React.SetStateAction<Track[]>>;
+
+  // Offline Queue Actions (Dexie.js)
+  offlineQueueRecords: OfflineQueueRecord[];
+  queueTrackForOffline: (track: Track) => Promise<void>;
+  removeTrackFromOffline: (trackId: string) => Promise<void>;
+  isTrackQueuedOffline: (trackId: string) => boolean;
+  clearOfflineQueue: () => Promise<void>;
 
   // Playlist Management Actions
   createPlaylist: (name: string, description?: string) => void;
@@ -321,11 +341,15 @@ export const AudioProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   // PWA Registration & Install Event Listeners
   useEffect(() => {
     if ('serviceWorker' in navigator) {
-      navigator.serviceWorker.register('/service-worker.js').then((reg) => {
+      const baseUrl = (import.meta as any).env?.BASE_URL || '/';
+      const swUrl = `${baseUrl}service-worker.js`;
+      const swFallbackUrl = `${baseUrl}sw.js`;
+      
+      navigator.serviceWorker.register(swUrl).then((reg) => {
         console.log('Harmony Workbox Service Worker registered:', reg);
       }).catch((err) => {
-        console.warn('Fallback registering /sw.js:', err);
-        navigator.serviceWorker.register('/sw.js').catch(() => {});
+        console.warn('Fallback registering fallback sw.js:', err);
+        navigator.serviceWorker.register(swFallbackUrl).catch(() => {});
       });
     }
 
@@ -456,7 +480,14 @@ export const AudioProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   const [isPlaying, setIsPlaying] = useState<boolean>(false);
   const [currentTime, setCurrentTime] = useState<number>(0);
   const [duration, setDuration] = useState<number>(MOCK_TRACKS[0].duration);
-  const [volume, setVolumeState] = useState<number>(0.8);
+  const [volume, setVolumeState] = useState<number>(() => {
+    try {
+      const saved = localStorage.getItem('harmony_volume');
+      return saved !== null ? parseFloat(saved) : 0.8;
+    } catch {
+      return 0.8;
+    }
+  });
   const [isMuted, setIsMuted] = useState<boolean>(false);
   const [isShuffle, setIsShuffle] = useState<boolean>(false);
   const [repeatMode, setRepeatMode] = useState<RepeatMode>('off');
@@ -468,6 +499,20 @@ export const AudioProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   const [showLyrics, setShowLyrics] = useState<boolean>(false);
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [localTracks, setLocalTracks] = useState<Track[]>([]);
+  const [offlineQueueRecords, setOfflineQueueRecords] = useState<OfflineQueueRecord[]>([]);
+
+  // Load IndexedDB Offline Queue on initial mount
+  useEffect(() => {
+    async function loadOfflineQueue() {
+      try {
+        const records = await getAllOfflineQueueDB();
+        setOfflineQueueRecords(records);
+      } catch (err) {
+        console.warn('Dexie offline queue load error:', err);
+      }
+    }
+    loadOfflineQueue();
+  }, []);
 
   // Load IndexedDB Local Tracks on initial mount
   useEffect(() => {
@@ -908,9 +953,22 @@ export const AudioProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   }, [playCounts, localTracks]);
 
   // User Play Actions
-  const playTrack = (track: Track, customQueue?: Track[]) => {
+  const playTrack = async (track: Track, customQueue?: Track[]) => {
     triggerHaptic(18);
     recordTrackPlay(track);
+
+    let playableTrack = track;
+    try {
+      const blob = await getAudioBlobDB(track.id);
+      if (blob) {
+        playableTrack = {
+          ...track,
+          audioUrl: URL.createObjectURL(blob)
+        };
+      }
+    } catch (e) {
+      console.warn('Dexie audio blob playback resolve notice:', e);
+    }
 
     if (customQueue && customQueue.length > 0) {
       setQueue(customQueue);
@@ -921,11 +979,11 @@ export const AudioProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       if (idx !== -1) {
         setQueueIndex(idx);
       } else {
-        setQueue(prev => [track, ...prev]);
+        setQueue(prev => [playableTrack, ...prev]);
         setQueueIndex(0);
       }
     }
-    setCurrentTrack(track);
+    setCurrentTrack(playableTrack);
     setIsPlaying(true);
   };
 
@@ -944,8 +1002,58 @@ export const AudioProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   const setVolume = (val: number) => {
     const clamped = Math.max(0, Math.min(1, val));
     setVolumeState(clamped);
+    try {
+      localStorage.setItem('harmony_volume', clamped.toString());
+    } catch (e) {
+      console.warn('Failed to persist volume to localStorage:', e);
+    }
     if (clamped > 0 && isMuted) {
       setIsMuted(false);
+    }
+  };
+
+  // Offline Queue Actions (Dexie.js)
+  const isTrackQueuedOffline = (trackId: string): boolean => {
+    return offlineQueueRecords.some(r => r.trackId === trackId);
+  };
+
+  const queueTrackForOffline = async (track: Track) => {
+    triggerHaptic(15);
+    try {
+      showToast(`Downloading & caching "${track.title}" for offline listening...`, 'info', 2000);
+      const record = await queueTrackForOfflineDB(track);
+      setOfflineQueueRecords(prev => {
+        const filtered = prev.filter(r => r.trackId !== track.id);
+        return [record, ...filtered];
+      });
+      showToast(`"${track.title}" is ready for offline listening!`, 'success');
+    } catch (err) {
+      console.error('Offline queue error:', err);
+      showToast(`Failed to cache "${track.title}" for offline listening`, 'error');
+    }
+  };
+
+  const removeTrackFromOffline = async (trackId: string) => {
+    triggerHaptic(12);
+    try {
+      await removeTrackFromOfflineDB(trackId);
+      setOfflineQueueRecords(prev => prev.filter(r => r.trackId !== trackId));
+      showToast('Removed track from offline queue', 'info');
+    } catch (err) {
+      console.error('Failed to remove track from offline queue:', err);
+      showToast('Failed to remove track from offline queue', 'error');
+    }
+  };
+
+  const clearOfflineQueue = async () => {
+    triggerHaptic(20);
+    try {
+      await clearOfflineQueueDB();
+      setOfflineQueueRecords([]);
+      showToast('Offline listening queue cleared', 'info');
+    } catch (err) {
+      console.error('Failed to clear offline queue:', err);
+      showToast('Failed to clear offline queue', 'error');
     }
   };
 
@@ -1459,6 +1567,11 @@ export const AudioProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         setLocalTracks,
         updateLocalTrackMetadata,
         deleteLocalTrack,
+        offlineQueueRecords,
+        queueTrackForOffline,
+        removeTrackFromOffline,
+        isTrackQueuedOffline,
+        clearOfflineQueue,
         customPlaylists,
         recentlyPlayed,
         mostPlayedTracks,
